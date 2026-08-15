@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group dev
+      - run: uv run ruff check src/ tests/
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # macOS on the two newest pythons only, to save minutes (A5).
+          - os: macos-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --group dev
+      - run: uv run pytest -m "not integration"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - name: wheel audit — none of the 9 Decision-#17 modules may ship
+        run: |
+          ! unzip -l dist/*.whl | grep -E \
+            'llm_council/(gateway|agent|agent_tools|sessions|compaction|minimax_agent|minimax_video|media_understand|attachments)\.py'
+      - name: wheel audit — both console scripts present (Decision #15)
+        run: |
+          test "$(unzip -p dist/*.whl '*/entry_points.txt' | grep -c 'blessthis-llm-council')" -ge 2
+
+  publish:
+    needs: [lint, test, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - name: Publish to TestPyPI (dry-run pre-release)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+      - name: Rebuild dist clean (drop TestPyPI attestations)
+        run: |
+          rm -rf dist
+          uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Fake `codex exec --json` for tests. Emits a three-line JSONL stream."""
+import json
+import os
+import sys
+import uuid
+
+if os.environ.get("FAKE_CODEX_FAIL") == "1":
+    print("codex auth failed", file=sys.stderr)
+    sys.exit(1)
+
+print(json.dumps({"type": "thread.started", "thread_id": f"fake-thread-{uuid.uuid4()}"}))
+print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 80, "output_tokens": 40}}))
+print(json.dumps({
+    "type": "item.completed",
+    "item": {"type": "agent_message", "text": "FAKE CODEX ANSWER"},
+}))

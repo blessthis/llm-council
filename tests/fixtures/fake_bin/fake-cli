@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Fake seat CLI placeholder (A4). P3 runner tests exec this binary via the same
+exec-array spawn path used in production; it emits canned JSON/JSONL per the
+runner protocol. Never mock at the subprocess layer."""
+
+import sys
+
+if __name__ == "__main__":
+    sys.stdout.write('{"type":"session","id":"00000000-0000-0000-0000-000000000000"}\n')
+    sys.stdout.write('{"result":"fake seat answer","is_error":false,"usage":{}}\n')
