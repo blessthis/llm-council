@@ -1,0 +1,80 @@
+[project]
+name = "blessthis-llm-council"
+version = "1.0.0"
+description = "Universal multi-host installer + MCP server for blind multi-model councils. Each council seat is a real agent CLI subprocess (claude/pi/codex). Ships to Claude Code, pi, Cursor, Codex, Copilot, Gemini. SQLite default, Postgres optional. BYO gateway."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+authors = [
+    { name = "blessthis", email = "hello@blessthis.software" },
+]
+keywords = ["mcp", "llm", "council", "agents", "multi-model"]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+]
+dependencies = [
+    "mcp[cli]>=1.19.0,<2",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "questionary>=2.0.0",
+    "tomlkit>=0.13.0",
+    "pyyaml>=6.0.0",
+    "aiosqlite>=0.20.0",
+    "python-dotenv>=1.0.0",
+    "ruamel-yaml>=0.19.1",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.29.0"]
+
+[project.urls]
+Homepage = "https://github.com/blessthis/llm-council"
+Repository = "https://github.com/blessthis/llm-council"
+Issues = "https://github.com/blessthis/llm-council/issues"
+
+[project.scripts]
+# Two console scripts (Decision #15): bare `blessthis-llm-council` = the installer
+# (typer app); `blessthis-llm-council-server` = the MCP server (stdio).
+blessthis-llm-council = "llm_council.cli:main"
+blessthis-llm-council-server = "llm_council.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+]
+
+[tool.uv]
+# cryptography (pulled in via mcp -> pyjwt[crypto]) has no compiler toolchain here;
+# always install it from a prebuilt wheel instead of building from source.
+no-build-package = ["cryptography"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_council"]
+
+# A6 wheel package-data: repo-root agents/ + seats.example.yaml land in the wheel
+# under llm_council/data/ so installed copies work without a repo checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"agents" = "llm_council/data/agents"
+"seats.example.yaml" = "llm_council/data/seats.example.yaml"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "BLE"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["BLE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: real-seat end-to-end tests (skipped unless RUN_INTEGRATION=1)",
+    "e2e: full installer e2e tests (skipped unless E2E_INSTALL=1)",
+]

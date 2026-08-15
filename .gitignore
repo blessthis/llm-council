@@ -1,0 +1,23 @@
+# Local research clones (mined for patterns, not committed)
+docs/research/bmad-study/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Local state
+*.bak
+
+# Secrets (never commit — ship .env.example as template instead)
+.env
+.env.local
+.env.*.local
+# dev-only artifacts, kept locally but not published
+PLAN.md
+docs/research/
+docs/acceptance.md
+docs/testing.md
+docs/installer-ux.md
+dist/

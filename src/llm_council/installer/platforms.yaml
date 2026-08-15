@@ -1,0 +1,57 @@
+# Declarative per-host registry (data only — quirks live in hosts.py, Q7).
+# Paths may contain "~" (expanded at use) and are user-scope defaults;
+# Copilot is per-project (mcp_config_path/agent_dir are relative to the project root).
+hosts:
+  - name: claude
+    display_name: Claude Code
+    detect_paths:
+      - ~/.claude.json
+      - ~/.claude
+    mcp_config_path: ~/.claude.json
+    agent_dir: ~/.claude/agents
+    preferred: cli
+
+  - name: pi
+    display_name: pi
+    detect_paths:
+      - ~/.pi/agent/mcp.json
+      - ~/.pi
+    mcp_config_path: ~/.pi/agent/mcp.json
+    agent_dir: ~/.pi/agent/agents
+    preferred: file-merge
+
+  - name: codex
+    display_name: Codex CLI
+    detect_paths:
+      - ~/.codex/config.toml
+      - ~/.codex
+    mcp_config_path: ~/.codex/config.toml
+    agent_dir: ~/.codex/agents
+    preferred: file-merge
+
+  - name: cursor
+    display_name: Cursor
+    detect_paths:
+      - ~/.cursor/mcp.json
+      - ~/.cursor
+    mcp_config_path: ~/.cursor/mcp.json
+    agent_dir: ~/.cursor/agents
+    preferred: file-merge
+
+  - name: copilot
+    display_name: GitHub Copilot / VS Code
+    detect_paths:
+      - .vscode/mcp.json
+      - .github/agents
+    mcp_config_path: .vscode/mcp.json
+    agent_dir: .github/agents
+    preferred: file-merge
+
+  - name: gemini
+    display_name: Gemini CLI
+    detect_paths:
+      - ~/.gemini/settings.json
+      - ~/.gemini
+    mcp_config_path: ~/.gemini/settings.json
+    agent_dir: ~/.gemini/agents
+    preferred: cli
