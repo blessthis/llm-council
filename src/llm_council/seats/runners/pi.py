@@ -142,6 +142,7 @@ class PiRunner:
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=16 * 1024 * 1024,  # pi --mode json emits one JSON line per event; a toolResult embedding a big file read exceeds the 64KB StreamReader default
             )
         except (FileNotFoundError, PermissionError) as e:
             raise RuntimeError(
