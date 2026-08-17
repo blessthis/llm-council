@@ -22,7 +22,16 @@ from pathlib import Path
 from typing import Any
 
 import questionary
+
+# Ctrl+C must abort the whole wizard, not be swallowed as a None answer.
+# questionary's .ask() returns None on Ctrl+C (call sites do `or ""` → loops
+# re-prompt, feels like the installer "jumps to another step"). unsafe_ask()
+# raises KeyboardInterrupt instead, which typer/click turn into a clean exit 130.
+import questionary.question as _question_mod
 import yaml
+
+if getattr(_question_mod.Question.ask, "__name__", "") != "unsafe_ask":
+    _question_mod.Question.ask = _question_mod.Question.unsafe_ask
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -33,6 +42,7 @@ from .installer.agents_writer import write_agents
 from .installer.fingerprint import CANONICAL_KEY, is_ours
 from .installer.hosts import RegistrationConflict, get_host_binding
 from .installer.platforms import load_platforms
+from .installer.server_source import spawn_check_command
 from .seats import SeatsFileError, load_seats
 from .seats.base import AgentSpec, Seat
 
@@ -59,6 +69,9 @@ ARGS_TEMPLATES: dict[str, list[str]] = {
     "codex": [
         "exec", "--json", "--skip-git-repo-check", "-s", "read-only",
         "--color", "never", "-m", "{model}", "-C", "{workdir}", "{prompt}",
+    ],
+    "gemini": [
+        "--model", "{model}", "-p", "{prompt}",
     ],
 }
 
@@ -91,6 +104,9 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     },
 }
 
+# NOTE: TEMPLATES is no longer offered as a menu — seats are always built as
+# (name, runner, models, env). Kept only for backwards-compat imports/tests.
+
 NON_TTY_MESSAGE = (
     "blessthis-llm-council installer is interactive but stdin/stdout is not a TTY.\n"
     "Options:\n"
@@ -112,9 +128,66 @@ def _version() -> str:
 
 def _confirm(console: Console, question: str, *, default: bool = True,
              yes: bool = False) -> bool:
+    """y/N confirm that also accepts non-latin keyboard layouts.
+
+    questionary's built-in confirm binds only y/Y/n/N; every other key is
+    swallowed — on a ЙЦУКЕН layout the physical Y/N keys emit «н»/«т» and the
+    prompt appears dead. We re-create the confirm prompt with extra bindings
+    (Y→нН, N→тТ) so the answer works regardless of the active layout.
+    """
     if yes:
         return default
-    return bool(questionary.confirm(question, default=default).ask())
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import to_formatted_text
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
+    from questionary import constants as q_const
+
+    status: dict[str, Any] = {"answer": None, "complete": False}
+    yes_no = q_const.YES_OR_NO if default else q_const.NO_OR_YES
+
+    def get_prompt_tokens():
+        tokens: list[tuple[str, str]] = [
+            ("class:qmark", q_const.DEFAULT_QUESTION_PREFIX),
+            ("class:question", f" {question} "),
+        ]
+        if not status["complete"]:
+            tokens.append(("class:instruction", f"{yes_no} "))
+        if status["answer"] is not None:
+            ans = q_const.YES if status["answer"] else q_const.NO
+            tokens.append(("class:answer", ans))
+        return to_formatted_text(tokens)
+
+    def exit_with_result(event) -> None:
+        status["complete"] = True
+        event.app.exit(result=status["answer"])
+
+    bindings = KeyBindings()
+
+    @bindings.add(Keys.ControlC, eager=True)
+    def _(event):  # noqa: ANN001
+        event.app.exit(exception=KeyboardInterrupt, style="class:aborting")
+
+    for key in ("y", "Y", "н", "Н"):  # ЙЦУКЕН: physical Y row emits н
+        @bindings.add(key, eager=True)
+        def _yes(event, _key=key):  # noqa: ANN001
+            status["answer"] = True
+            exit_with_result(event)
+
+    for key in ("n", "N", "т", "Т"):  # ЙЦУКЕН: physical N row emits т
+        @bindings.add(key, eager=True)
+        def _no(event, _key=key):  # noqa: ANN001
+            status["answer"] = False
+            exit_with_result(event)
+
+    @bindings.add(Keys.ControlM, eager=True)
+    def _enter(event):  # noqa: ANN001
+        if status["answer"] is None:
+            status["answer"] = default
+        exit_with_result(event)
+
+    result = PromptSession(get_prompt_tokens, key_bindings=bindings).app.run()
+    return bool(result)
 
 
 def _abort_on_none(answer: Any) -> None:
@@ -183,14 +256,15 @@ def _env_prompts(env_kind: str, console: Console, *, yes: bool) -> dict[str, str
         base = "" if yes else (questionary.text("OPENAI_BASE_URL (optional):").ask() or "").strip()
         if base:
             env["OPENAI_BASE_URL"] = base
-    else:  # "none" — pi reads its own models.json
-        console.print("  pi reads its own models.json — no env needed.")
+    else:  # "none" — pi/gemini manage their own auth
+        console.print("  runner manages its own auth — no env needed.")
     return env
 
 
-def _extra_env_loop(*, yes: bool) -> dict[str, str]:
+def _extra_env_loop(*, yes: bool, console: Console | None = None) -> dict[str, str]:
     env: dict[str, str] = {}
-    if yes or not questionary.confirm("Add extra env vars?", default=False).ask():
+    if yes or not _confirm(console=console, question="Add extra env vars?",
+                           default=False):
         return env
     while True:
         raw = questionary.text("KEY=VALUE (empty to finish):").ask() or ""
@@ -204,17 +278,49 @@ def _extra_env_loop(*, yes: bool) -> dict[str, str]:
         env[key] = value
 
 
-def _runner_select(*, yes: bool) -> str:
+def _runner_select(*, yes: bool, current: str | None = None) -> str:
     choices = []
-    for binname in ("claude", "pi", "codex"):
+    for binname in ("claude", "pi", "codex", "gemini"):
         found = shutil.which(binname)
         tag = "[detected]" if found else "[NOT FOUND on PATH]"
+        if current and (binname == current or str(current).endswith(f"/{binname}")):
+            tag += " — current"
         choices.append(questionary.Choice(f"{binname} {tag}", value=binname))
+    choices.append(questionary.Choice(
+        "custom binary (enter path, generic runner)", value="custom"))
     if yes:
-        return "claude"
-    answer = questionary.select("Runner binary:", choices=choices).ask()
+        return current or "claude"
+    # Pre-select the seat's current runner when editing
+    default_idx = next((i for i, c in enumerate(choices)
+                        if current and (c.value == current
+                                        or str(current).endswith(f"/{c.value}"))), None)
+    if default_idx is not None:
+        answer = questionary.select("Runner binary:", choices=choices,
+                                    default=choices[default_idx]).ask()
+    else:
+        answer = questionary.select("Runner binary:", choices=choices).ask()
     _abort_on_none(answer)
-    return str(answer)
+    binname = str(answer)
+    if binname == "custom":
+        return _prompt_binary_path(console=None)
+    return binname
+
+
+def _prompt_binary_path(*, console, default: str = "") -> str:
+    """Ask for a binary path when the runner is not on PATH. Loops until the
+    path exists and is executable (or user aborts with Ctrl+C/empty answer)."""
+    while True:
+        raw = questionary.path(
+            "Binary is not on PATH — enter the full path to the CLI binary:",
+            default=default,
+            validate=lambda p: bool(p) and Path(p).expanduser().is_file(),
+        ).ask()
+        if not raw:
+            raise KeyboardInterrupt  # aborted → matches Ctrl+C handling
+        p = Path(str(raw)).expanduser()
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+        print(f"  ! {p} is not an executable file")
 
 
 def build_seat_interactive(
@@ -235,9 +341,10 @@ def build_seat_interactive(
             print(f"  ! {name!r} must match ^[a-z0-9][a-z0-9-]*$")
             continue
         if name in taken:
-            overwrite = questionary.confirm(
-                f"Seat {name!r} already exists — overwrite its definition?",
-                default=False).ask()
+            overwrite = _confirm(
+                console=console,
+                question=f"Seat {name!r} already exists — overwrite its definition?",
+                default=False)
             if overwrite is None:
                 return None
             if overwrite:
@@ -252,13 +359,30 @@ def build_seat_interactive(
     if not models:
         return None
     # A3.3 runner
-    binname = preset.get("bin") if (yes and preset.get("bin")) else _runner_select(yes=yes)
-    if not shutil.which(binname):
-        console.print(f"[yellow]WARN: {binname!r} not found on PATH[/yellow]")
-    args = list(ARGS_TEMPLATES[binname])
-    # A3.4 env
-    env = _env_prompts(preset.get("env_kind", ""), console, yes=yes) if preset else {}
-    env.update(_extra_env_loop(yes=yes))
+    binname = preset.get("bin") if (yes and preset.get("bin")) else _runner_select(
+        yes=yes, current=(preset or {}).get("bin"))
+    if not shutil.which(binname) and not Path(binname).expanduser().is_file():
+        # editing: preset holds the current full path — offered as default
+        cur_path = (preset or {}).get("bin", "")
+        if not (yes and cur_path):
+            console.print(f"[yellow]{binname!r} not on PATH — enter its full path:[/yellow]")
+            binname = _prompt_binary_path(console=console, default=cur_path)
+        else:
+            binname = cur_path
+    template_key = next((k for k in ARGS_TEMPLATES if str(binname).endswith(k)
+                         or str(binname).endswith(f"/{k}")), None)
+    args = list(ARGS_TEMPLATES[template_key]) if template_key else [
+        "{prompt}",  # generic: prompt as first arg, caller reads stdout
+    ]
+    # A3.4 env — runner-aware creds prompts; pi needs none (models.json).
+    env_kind = preset.get("env_kind", "") if preset else {
+        "claude": "anthropic", "pi": "none", "codex": "openai",
+        "gemini": "none",
+    }.get(str(binname).rsplit("/", 1)[-1].lower(), "")
+    env = _env_prompts(env_kind, console, yes=yes)
+    for k, v in (preset or {}).get("env", {}).items():
+        env.setdefault(k, v)  # keep existing values as-is; prompts may override
+    env.update(_extra_env_loop(yes=yes, console=console))
     seat_def: dict[str, Any] = {
         "models": models,
         "agent": {"bin": binname, "args": args, "env": env},
@@ -268,6 +392,8 @@ def build_seat_interactive(
         if _confirm(console, f"Probe this seat now? (spawns `{binname}` with a 1-token "
                              "prompt)", default=True, yes=yes):
             ok, err = probe_seat({**seat_def, "name": name})
+            if ok:
+                console.print(f"[green]✓ probe ok[/green] ({binname} answered)")
             while not ok:
                 console.print(f"[red]Probe failed:[/red] {err[-400:]}")
                 if yes:
@@ -287,15 +413,15 @@ def build_seat_interactive(
 
 # --- Phase A --------------------------------------------------------------------
 
-def _template_choices() -> list[questionary.Choice]:
+def _seat_choices(existing: dict[str, Any]) -> list[questionary.Choice]:
+    """Edit mode: offer to modify each EXISTING seat, plus add a new one."""
     choices: list[questionary.Choice] = []
-    for label, tpl in TEMPLATES.items():
-        found = shutil.which(str(tpl["bin"]))
+    for name, seat in existing.items():
+        binname = seat.get("agent", {}).get("bin", "?")
+        models = seat.get("models", [])
         choices.append(questionary.Choice(
-            f"{label} — {tpl['bin']} runner, models: {tpl['models']} ({tpl['creds']})",
-            value=label, checked=bool(found),
-        ))
-    choices.append(questionary.Choice("+ Custom seat…", value="__custom__"))
+            f"edit {name} — {binname} runner, models: {models}", value=name))
+    choices.append(questionary.Choice("+ Add a new seat…", value="__new__"))
     return choices
 
 
@@ -331,33 +457,60 @@ def run_phase_a(console: Console, *, yes: bool, offline: bool,
                 seats.pop(name, None)
                 removed.add(name)
                 console.print(f"  removed seat: {name}")
-    while True:
-        selected = (
-            [] if yes else
-            (questionary.checkbox(
-                "Which seats should we set up? (space to toggle, enter to accept)",
-                choices=_template_choices()).ask() or [])
-        )
-        _abort_on_none(selected)
-        if selected:
+    if baseline and seats and not yes:
+        # Edit mode: offer to modify the EXISTING seats, then optionally add
+        # new ones. No template menu — a seat is (name, runner, models, env).
+        while True:
+            selected = questionary.checkbox(
+                "Modify which seats? (space to toggle, enter to accept)",
+                choices=_seat_choices(seats)).ask() or []
+            _abort_on_none(selected)
+            for name in selected:
+                if name == "__new__":
+                    continue
+                # Pre-seed the builder with the CURRENT seat definition so
+                # Enter keeps each answer; only what you retype changes.
+                cur = seats.get(name) or {}
+                seat = build_seat_interactive(
+                    console, yes=False, offline=offline, existing=set(seats),
+                    preset={"name": name,
+                            "bin": cur.get("agent", {}).get("bin", "claude"),
+                            "models": list(cur.get("models", [])),
+                            "env_kind": "",
+                            "env": dict(cur.get("agent", {}).get("env", {}))})
+                if seat:
+                    seats.update(seat)
+                    touched.update(seat)
+            if "__new__" in selected:
+                seat = build_seat_interactive(console, yes=False, offline=offline,
+                                              existing=set(seats))
+                if seat:
+                    seats.update(seat)
+                    touched.update(seat)
+                    continue
             break
-        if not _confirm(
-            console,
-            "No seats selected. The MCP server will install but `council_start` "
-            "will fail until you add seats (`blessthis-llm-council seats add`). "
-            "Continue?", default=False, yes=yes,
-        ):
-            continue
-        break
-    for label in selected:
-        if label == "__custom__":
-            continue
-        seat = build_seat_interactive(console, yes=yes, offline=offline,
-                                      existing=set(seats), preset=TEMPLATES[label])
-        if seat:
-            seats.update(seat)
-            touched.update(seat)
-    while not offline and _confirm(console, "Add another (custom) seat?",
+    else:
+        # Fresh install: no menus — just build seats one by one.
+        if yes or _confirm(console, "Add a seat now?", default=True, yes=yes):
+            seat = build_seat_interactive(console, yes=yes, offline=offline,
+                                          existing=set(seats))
+            if seat:
+                seats.update(seat)
+                touched.update(seat)
+        else:
+            if not _confirm(
+                console,
+                "No seats at all. The MCP server will install but `council_start` "
+                "will fail until you add seats (`blessthis-llm-council seats add`). "
+                "Continue?", default=False, yes=yes,
+            ):
+                # not confirmed → go add a seat after all
+                seat = build_seat_interactive(console, yes=False, offline=offline,
+                                              existing=set(seats))
+                if seat:
+                    seats.update(seat)
+                    touched.update(seat)
+    while not offline and _confirm(console, "Add another seat?",
                                    default=False, yes=False):
         seat = build_seat_interactive(console, yes=False, offline=offline,
                                       existing=set(seats))
@@ -447,14 +600,14 @@ def _print_change_summary(console: Console, added: list[str], modified: list[str
 # --- Phase B --------------------------------------------------------------------
 
 def _spawn_check(seats_file: str, console: Console) -> bool:
-    """`uvx blessthis-llm-council-server --help` resolves (warms the uv cache)."""
+    """Server spawn check via the registered launch command (warms uv cache)."""
     if not shutil.which("uvx"):
         console.print("[yellow]WARN: uvx not found on PATH[/yellow]")
         return False
     env = {**os.environ, "SEATS_FILE": seats_file}
     try:
         proc = subprocess.run(
-            ["uvx", "blessthis-llm-council-server", "--help"],
+            spawn_check_command(),
             capture_output=True, text=True, env=env, timeout=120, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

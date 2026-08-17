@@ -31,6 +31,7 @@ from .config import Config
 from .installer.agents_writer import remove_agents
 from .installer.fingerprint import CANONICAL_KEY, find_ours, is_ours
 from .installer.hosts import get_host_binding
+from .installer.server_source import spawn_check_command
 from .seats import SeatsFileError, load_seats
 from .wizard import KNOWN_HOSTS, build_seat_interactive, probe_seat, run_wizard
 
@@ -125,13 +126,13 @@ def _seat_referenced(name: str, database_url: str) -> bool:
 
 
 def _spawn_check(seats_file: str) -> tuple[bool, str]:
-    """`uvx blessthis-llm-council-server --help` — validates the entry point."""
+    """Server spawn check — validates the exact registered launch command."""
     if not shutil.which("uvx"):
         return False, "uvx not found on PATH"
     env = {**os.environ, "SEATS_FILE": seats_file}
     try:
         proc = subprocess.run(
-            ["uvx", "blessthis-llm-council-server", "--help"],
+            spawn_check_command(),
             capture_output=True, text=True, env=env, timeout=180, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -508,7 +509,7 @@ def doctor(
         ok, err = (_deep_mcp_handshake() if deep else _spawn_check(str(path)))
         if ok:
             line("PASS", "server spawn check (17 tools)" if deep else
-                 "uvx blessthis-llm-council-server --help")
+                 "server spawn check")
         else:
             line("FAIL", f"server spawn check: {err}")
     # 5. per-host wiring

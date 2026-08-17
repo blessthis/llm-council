@@ -110,10 +110,12 @@ class HostBinding(ABC):
 
     # -- registration ----------------------------------------------------
     def build_entry(self, seats_file_abs: str) -> dict:
+        from .server_source import server_args
+
         return {
             "type": "stdio",
-            "command": "uvx",
-            "args": ["blessthis-llm-council-server"],
+            "command": server_args()[0],
+            "args": server_args()[1:],
             "env": {"SEATS_FILE": str(seats_file_abs)},
         }
 
@@ -206,10 +208,12 @@ class ClaudeBinding(JsonHostBinding):
     cli_binary = "claude"
 
     def _cli_command(self, seats_file_abs: str) -> list[str]:
+        from .server_source import server_args
+
         return [
             "claude", "mcp", "add", "--scope", "user", "--transport", "stdio",
             "--env", f"SEATS_FILE={seats_file_abs}",
-            CANONICAL_KEY, "--", "uvx", "blessthis-llm-council-server",
+            CANONICAL_KEY, "--", *server_args(),
         ]
 
 
@@ -217,10 +221,12 @@ class GeminiBinding(JsonHostBinding):
     cli_binary = "gemini"
 
     def _cli_command(self, seats_file_abs: str) -> list[str]:
+        from .server_source import server_args
+
         return [
             "gemini", "mcp", "add", "-s", "user",
             "-e", f"SEATS_FILE={seats_file_abs}",
-            CANONICAL_KEY, "uvx", "blessthis-llm-council-server",
+            CANONICAL_KEY, *server_args(),
         ]
 
 
@@ -251,9 +257,11 @@ class CodexBinding(HostBinding):
     """Codex: `~/.codex/config.toml` via tomlkit (comments survive)."""
 
     def _entry_table(self, seats_file_abs: str) -> dict[str, Any]:
+        from .server_source import server_args
+
         return {
-            "command": "uvx",
-            "args": ["blessthis-llm-council-server"],
+            "command": server_args()[0],
+            "args": server_args()[1:],
             "env": {"SEATS_FILE": str(seats_file_abs)},
             "enabled": True,
         }

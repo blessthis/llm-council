@@ -57,7 +57,7 @@ The installer writes only files matching `blessthis-council-*`; uninstall delete
 ```bash
 claude mcp add --scope user --transport stdio \
   --env SEATS_FILE="${HOME}/.blessthis-llm-council/seats.yaml" \
-  llm-council -- uvx blessthis-llm-council-server
+  llm-council -- uvx --from blessthis-llm-council blessthis-llm-council-server
 claude mcp list && claude mcp get llm-council   # verify
 ```
 
@@ -75,7 +75,7 @@ Agent files → `~/.claude/agents/*.md` (TitleCase `tools:`, `mcp__llm-council__
 
 ```bash
 gemini mcp add -s user -e SEATS_FILE="${HOME}/.blessthis-llm-council/seats.yaml" \
-  llm-council uvx blessthis-llm-council-server
+  llm-council uvx --from blessthis-llm-council blessthis-llm-council-server
 gemini mcp list   # verify
 ```
 

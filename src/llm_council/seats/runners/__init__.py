@@ -18,6 +18,7 @@ _MODULES: dict[str, str] = {
     "claude": "claude",
     "pi": "pi",
     "codex": "codex",
+    "gemini": "gemini",
     "generic": "generic",
 }
 

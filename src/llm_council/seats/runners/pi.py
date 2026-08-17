@@ -142,7 +142,12 @@ class PiRunner:
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                limit=16 * 1024 * 1024,  # pi --mode json emits one JSON line per event; a toolResult embedding a big file read exceeds the 64KB StreamReader default
+                # NOTE: pi --mode json emits ONE JSON LINE per event; a toolResult
+                # embedding a big file read can exceed any fixed StreamReader
+                # limit (default 64KB → "Separator is not found, and chunk exceed
+                # the limit"). We therefore do NOT use readline()/async-for; the
+                # stream loop below reads raw chunks and splits lines itself.
+                limit=2 ** 30,
             )
         except (FileNotFoundError, PermissionError) as e:
             raise RuntimeError(
@@ -157,27 +162,40 @@ class PiRunner:
         async def _stream() -> None:
             nonlocal sid, answer, usage
             assert proc.stdout is not None
-            async for raw in proc.stdout:
-                line = raw.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    evt = json.loads(line)
-                except ValueError:
-                    continue  # non-JSON noise line — skip
-                if not isinstance(evt, dict):
-                    continue
-                evt_type = evt.get("type")
-                if evt_type == "session" and evt.get("id") and not sid:
-                    sid = str(evt["id"])
-                    if on_session is not None:
-                        await on_session(sid)  # IMMEDIATELY, per contract
-                elif evt_type == "agent_end":
-                    for msg in reversed(evt.get("messages") or []):
-                        if isinstance(msg, dict) and msg.get("role") == "assistant":
-                            answer = _content_text(msg.get("content"))
-                            break
-                    usage = _parse_usage(evt)
+            buf = bytearray()
+            # Manual chunked read: no readline limit — one JSON event line can
+            # be arbitrarily large (huge toolResult payloads).
+            while True:
+                chunk = await proc.stdout.read(1024 * 1024)
+                if not chunk:
+                    break
+                buf += chunk
+                while True:
+                    nl = buf.find(b"\n")
+                    if nl < 0:
+                        break
+                    raw = bytes(buf[:nl])
+                    del buf[:nl + 1]
+                    line = raw.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+                    try:
+                        evt = json.loads(line)
+                    except ValueError:
+                        continue  # non-JSON noise line — skip
+                    if not isinstance(evt, dict):
+                        continue
+                    evt_type = evt.get("type")
+                    if evt_type == "session" and evt.get("id") and not sid:
+                        sid = str(evt["id"])
+                        if on_session is not None:
+                            await on_session(sid)  # IMMEDIATELY, per contract
+                    elif evt_type == "agent_end":
+                        for msg in reversed(evt.get("messages") or []):
+                            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                                answer = _content_text(msg.get("content"))
+                                break
+                        usage = _parse_usage(evt)
 
         try:
             await asyncio.wait_for(_stream(), timeout)

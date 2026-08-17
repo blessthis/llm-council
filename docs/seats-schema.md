@@ -235,7 +235,10 @@ Per-seat validation: valid seats load, invalid seats skipped with a warning list
 
 **Derived, never declared:** `runner_kind = basename(agent.bin)` lowercased, version suffix stripped (`claude`/`pi`/`codex`). Stored in `council_hats.seat_backend`; dispatch key for the Runner subclass; returned by `list_seats()`.
 
-### Unknown bin basename → generic exec runner
+### Known runners
+
+`claude`, `pi`, `codex`, `gemini` (exact basename, or with a version suffix like `gemini-3.5`). Anything else falls through:
+
 1. Spawn `bin + args` with placeholders substituted; final stdout to EOF = answer; usage = zeros; `session_id = None`.
 2. Warning rule 33 fires: council_ask disabled, `supports_progress()` = False.
 3. `doctor` flags yellow: `unknown runner '<bin>' — using generic exec runner (no resume, no usage, no progress)`.

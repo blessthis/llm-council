@@ -26,7 +26,7 @@ _PLACEHOLDER_RE = re.compile(r"\{[a-z_]+\}")
 _ALLOWED_PLACEHOLDERS = ("{prompt}", "{model}", "{workdir}", "{session_id}")
 _SHELL_METACHARS = set('|&;<>`$(')
 _TOP_KEYS = ("telemetry", "seats")
-_KNOWN_RUNNERS = ("claude", "pi", "codex")
+_KNOWN_RUNNERS = ("claude", "pi", "codex", "gemini")
 _TEMPLATE_VALUES = ("__REPLACE_ME__", "<your-")
 
 
@@ -56,11 +56,11 @@ def _runner_kind(bin_path: str) -> str:
     if base in _KNOWN_RUNNERS:
         return base
     # test fakes (tests/fixtures/fake_bin): fake-claude -> claude, etc.
-    m = re.match(r"^fake-(claude|pi|codex)(?:[-_.].*)?$", base)
+    m = re.match(r"^fake-(claude|pi|codex|gemini)(?:[-_.].*)?$", base)
     if m:
         return m.group(1)
     # strip a version suffix: claude-2.0 / pi_v1.9 / codex-1
-    m = re.match(r"^(claude|pi|codex)[-_]?v?\d", base)
+    m = re.match(r"^(claude|pi|codex|gemini)[-_]?v?\d", base)
     if m:
         return m.group(1)
     return "generic"

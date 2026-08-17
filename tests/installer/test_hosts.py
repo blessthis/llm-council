@@ -15,6 +15,16 @@ from llm_council.installer.platforms import load_platforms
 
 SEATS = "/tmp/seats.yaml"
 
+
+@pytest.fixture(autouse=True)
+def _registry_server_cmd(monkeypatch):
+    from llm_council.installer.server_source import PACKAGE_NAME, SERVER_BINARY
+
+    monkeypatch.setenv(
+        "LLM_COUNCIL_SERVER_CMD",
+        f"uvx --from {PACKAGE_NAME} {SERVER_BINARY}",
+    )
+
 FOREIGN_SERVER = {
     "type": "stdio",
     "command": "npx",
@@ -90,7 +100,7 @@ def test_json_merge_preserves_foreign_servers(name, tmp_path):
     assert data["topLevel"] == {"untouched": True}
     entry = data["mcpServers"][CANONICAL_KEY]
     assert entry["command"] == "uvx"
-    assert entry["args"] == ["blessthis-llm-council-server"]
+    assert entry["args"] == ["--from", "blessthis-llm-council", "blessthis-llm-council-server"]
     assert entry["env"] == {"SEATS_FILE": SEATS}
     # backup was made
     assert host.config_path().with_name(host.config_path().name + ".bak").exists()
