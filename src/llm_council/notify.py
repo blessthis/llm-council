@@ -1,7 +1,7 @@
 """Cross-platform desktop notification for crashes.
 
-- macOS: alerter (action buttons, waits for click, auto-installed to
-  ~/.blessthis-llm-council/bin) → terminal-notifier (brew) → osascript
+- macOS: terminal-notifier (auto-installed via brew when available) →
+  osascript notification fallback
 - Linux: zenity / kdialog dialogs, notify-send fallback
 - Windows: PowerShell toast / WScript Popup dialog
 
@@ -13,75 +13,29 @@ everything.
 from __future__ import annotations
 
 import shutil
-import stat
 import subprocess
 import sys
-import urllib.request
-from pathlib import Path
 
 _TIMEOUT = 5
 
-ALERTER_URL = ("https://github.com/vjeantet/alerter/releases/download/"
-               "v26.5/alerter-26.5.zip")
-# alerter 26.5 ships a fat binary; the zip contains the arm64 build
-ALERTER_URL_X64 = ("https://github.com/vjeantet/alerter/releases/download/"
-                   "v26.5/alerter-26.5-intel.zip")
+_TN_BREW_ATTEMPT = False
 
 
-def _alerter_path() -> Path:
-    return Path.home() / ".blessthis-llm-council" / "bin" / "alerter"
-
-
-def _ensure_alerter() -> bool:
-    """alerter present? If not, download once (both arch zips tried).
-    Returns True when the binary is usable."""
-    p = _alerter_path()
-    if p.is_file() and os_access_x(p):
+def _ensure_terminal_notifier() -> bool:
+    """terminal-notifier present? If brew exists, install it once per process
+    (best-effort, non-fatal). Returns True when the binary is usable."""
+    global _TN_BREW_ATTEMPTED
+    if shutil.which("terminal-notifier"):
         return True
+    if _TN_BREW_ATTEMPTED or not shutil.which("brew"):
+        return False
+    _TN_BREW_ATTEMPTED = True
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        urls = ([ALERTER_URL_X64, ALERTER_URL]
-                if sys.maxsize <= 2**32 or platform_is_x64() else
-                [ALERTER_URL, ALERTER_URL_X64])
-        # arch preference first; try both, keep whichever runs
-        for url in urls:
-            try:
-                import io
-                import zipfile
-
-                with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310
-                    data = r.read()
-                zf = zipfile.ZipFile(io.BytesIO(data))
-                member = next((n for n in zf.namelist()
-                               if n.endswith("alerter")
-                               or Path(n).name == "alerter"), None)
-                if member is None:
-                    continue
-                p.write_bytes(zf.read(member))
-                p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP
-                        | stat.S_IXOTH)
-                # smoke test: does it even execute on this arch?
-                r = subprocess.run([str(p), "--help"], capture_output=True,
-                                   timeout=15)
-                if r.returncode == 0:
-                    return True
-            except Exception:  # noqa: BLE001 — try next url
-                continue
+        subprocess.run(["brew", "install", "terminal-notifier"],
+                       check=False, timeout=300, capture_output=True)
+    except OSError:  # best-effort only
         return False
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def platform_is_x64() -> bool:
-    import platform
-
-    return platform.machine() in ("x86_64", "amd64")
-
-
-def os_access_x(p: Path) -> bool:
-    import os
-
-    return os.access(p, os.X_OK)
+    return bool(shutil.which("terminal-notifier"))
 
 
 def notify(title: str, message: str, *, action_url: str | None = None,
@@ -129,35 +83,19 @@ def _macos(title: str, message: str) -> None:
 
 def _macos_dialog(title: str, message: str, action_url: str,
                   action_label: str, close_label: str) -> bool:
-    """alerter gives a native notification with a custom action button that
-    WAITS for the click. rc=0 + action label on stdout = action clicked.
-    Falls back to terminal-notifier (click opens URL), then osascript."""
-    if _ensure_alerter():
-        try:
-            # ONE plain action button — no dropdown (dropdown only appears
-            # with multiple actions / dropdown-label). Default close label
-            # "Dismiss" keeps the (x) side; the main button is the only thing
-            # to click. Auto-dismiss after 5 min so we never hang forever.
-            r = subprocess.run(
-                [str(_alerter_path()),
-                 "--title", title, "--message", message[:200],
-                 "--actions", action_label,
-                 "--sound", "Basso", "--group", "llm-council-crash",
-                 "--timeout", "300"],
-                check=False, timeout=310, capture_output=True, text=True)
-            return (r.returncode == 0
-                    and action_label in (r.stdout or ""))
-        except Exception:  # noqa: BLE001
-            pass
-    # terminal-notifier fallback (installed by probe when brew exists)
-    if shutil.which("terminal-notifier"):
-        r = subprocess.run(
-            ["terminal-notifier", "-title", title, "-message", message,
+    """terminal-notifier notification: clicking the notification body opens
+    the URL (-open). No custom buttons (macOS allows those only for signed
+    apps), but the whole notification is clickable and it lingers in the
+    Notification Center. Returns False always (click is handled by -open;
+    the caller must not open the browser again).
+    Falls back to a plain osascript notification."""
+    if _ensure_terminal_notifier():
+        subprocess.run(
+            ["terminal-notifier", "-title", title, "-message", message[:200],
              "-sound", "Basso", "-open", action_url,
              "-group", "llm-council-crash", "-ignoreDnD"],
             check=False, timeout=15, capture_output=True)
-        return False  # click opens the URL itself; we can't detect it
-    # last resort: plain notification, link stays in terminal/log
+        return False  # -open handles the click; never double-open
     _macos(title, message)
     return False
 
@@ -217,15 +155,16 @@ def _windows_dialog(title: str, message: str, action_url: str) -> bool:
 
 
 def probe_notifications() -> None:
-    """Called at install time: ensure alert plumbing works and trigger the
-    macOS notification permission prompt EARLY (not during a future crash).
+    """Called at install time: ensure notification plumbing works and trigger
+    the macOS notification permission prompt EARLY (not during a future crash).
     Best-effort, never raises."""
     if sys.platform == "darwin":
-        if _ensure_alerter():
+        if _ensure_terminal_notifier():
             subprocess.run(
-                [str(_alerter_path()), "--title", "blessthis-llm-council",
-                 "--message", "Crash alerts will look like this.",
-                 "--group", "llm-council-probe", "--timeout", "10"],
+                ["terminal-notifier", "-title", "blessthis-llm-council",
+                 "-message", "Crash alerts will look like this — click them "
+                 "to open a prefilled GitHub issue.",
+                 "-group", "llm-council-probe"],
                 check=False, timeout=15, capture_output=True)
         else:
             subprocess.run(
