@@ -637,6 +637,9 @@ def update() -> None:
 
 
 def main() -> None:
+    from .crash import install
+
+    install()
     app()
 
 

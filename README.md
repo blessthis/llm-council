@@ -208,19 +208,9 @@ Everywhere the server is registered under the canonical name **`llm-council`** a
 
 ## Telemetry
 
-On by default; opt out anytime (`telemetry.enabled: false`, asked during install with default Yes — Decision #22).
-
 When enabled, we send only anonymized scoring events: `{model, kind, score, usage, tool_version, ts, council_uuid, agent}`. `agent` is which agent CLI hosted the council (claude/pi/codex/cursor/copilot/gemini), `"unknown"` if undetectable.
 
 We **never** send: your code, file paths, briefs, answer content, notes, seat names, credentials, or seat-health data.
-
-## Upgrading from the Postgres pre-release
-
-The store moved from Postgres to SQLite (`~/.blessthis-llm-council/state.db`). Migration is **stop-the-world** (A15):
-
-1. Stop the old server (quit every MCP host using it).
-2. Run `python scripts/migrate_pg_to_sqlite.py --pg postgres://localhost:5433/llm_council --sqlite sqlite:///$HOME/.blessthis-llm-council/state.db --verify` — it carries councils, hats (renamed `session_id`), scores, and model health (`seat='legacy'`), and verifies per-table row counts (non-zero exit on mismatch).
-3. Unset `DATABASE_URL` and start the new server. Postgres remains supported via `DATABASE_URL=postgres://...` (install the `[postgres]` extra).
 
 ## Uninstall & privacy
 
@@ -230,9 +220,6 @@ blessthis-llm-council uninstall --purge    # also deletes seats.yaml + state.db
 ```
 
 Everything lives under `~/.blessthis-llm-council/` (seats, SQLite state) plus the `llm-council` entry and `blessthis-council-*` files in your host configs. Nothing else on your system is touched. seats.yaml contains your API keys — keep it `0600` and never commit it.
-
-### Upgrading from pre-v1 (Postgres)
-The internal pre-release stored state in Postgres. Migration is stop-the-world: stop the old server, run `python scripts/migrate_pg_to_sqlite.py --pg <url> --sqlite sqlite:///$HOME/.blessthis-llm-council/state.db --verify` (requires `pip install blessthis-llm-council[postgres]`), then start the new server. Row counts are verified per table.
 
 ## License
 

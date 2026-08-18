@@ -321,6 +321,9 @@ def main() -> None:
     _seats_file_override = args.seats_file
 
     _setup_logging()
+    from .crash import install
+
+    install(headless_ok=True)
     mcp.run()
 
 

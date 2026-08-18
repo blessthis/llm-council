@@ -728,6 +728,13 @@ def run_phase_b(console: Console, seats_file: str, *, host: str | None,
             console.print("warming uvx cache (first run may take a minute)…")
             result["spawn_ok"] = _spawn_check(seats_file, console)
             spawn_done = True
+            # Enable + probe crash-alert plumbing now (installs
+            # terminal-notifier via brew when available; fires a test
+            # notification so the OS permission prompt happens HERE, at
+            # install time, not during a future crash).
+            from . import notify as _notify_mod
+
+            _notify_mod.probe_notifications()
         results.append(result)
         if not _confirm(console, "Wire up another host now?", default=False, yes=yes):
             break

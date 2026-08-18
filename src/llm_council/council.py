@@ -292,6 +292,21 @@ async def _run_seat(
         raise
     except Exception as e:  # noqa: BLE001 — surface seat failures without killing the council
         err = repr(e)
+        # Per-seat failures (e.g. runner stream errors) deserve visibility:
+        # log a prefilled-issue URL so users can report from server.log.
+        try:
+            from . import notify
+            from .crash import build_issue_url
+
+            logger.warning(
+                "seat hat=%s model=%s failed: %s — prefilled issue: %s",
+                hat_id, model, err, build_issue_url(e))
+            if isinstance(e, (ValueError, OSError)):
+                notify.notify(
+                    "llm-council seat failed",
+                    f"{type(e).__name__}: {str(e)[:100]} (see server.log)")
+        except Exception:  # noqa: BLE001 — reporting must never mask the failure
+            pass
     # Persist crash-safely — a failure here must not strand the hat as 'running'.
     if err is None:
         await _safe(
