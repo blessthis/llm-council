@@ -6,6 +6,9 @@ on:
     tags: ["v*"]
   pull_request:
 
+permissions:
+  contents: write  # gh release create on tag pushes
+
 jobs:
   lint:
     runs-on: ubuntu-latest
