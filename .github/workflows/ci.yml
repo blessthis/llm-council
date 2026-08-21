@@ -79,7 +79,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |-
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --verify-tag
+          # idempotent: reuse the release when it exists (re-runs),
+          # else create it with the built artifacts attached
+          gh release view "${GITHUB_REF_NAME}" \
+            || gh release create "${GITHUB_REF_NAME}" dist/* \
+                 --title "${GITHUB_REF_NAME}" \
+                 --generate-notes \
+                 --verify-tag
