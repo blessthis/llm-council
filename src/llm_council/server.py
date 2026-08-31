@@ -324,7 +324,22 @@ def main() -> None:
     from .crash import install
 
     install(headless_ok=True)
-    mcp.run()
+    try:
+        mcp.run()
+    except (BrokenPipeError, ConnectionResetError) as exc:
+        # Host closed the stdio pipe (session restart/exit) — benign shutdown.
+        _log.info("stdio pipe closed by host (%s) — exiting cleanly", exc)
+    except BaseException as exc:
+        # anyio wraps the BrokenPipeError in a TaskGroup ExceptionGroup; only
+        # treat it as a crash if a sub-exception is something other than a
+        # broken/reset pipe.
+        causes = (exc.exceptions if isinstance(exc, BaseExceptionGroup)
+                  else (exc,))
+        if all(isinstance(e, (BrokenPipeError, ConnectionResetError))
+               for e in causes):
+            _log.info("stdio pipe closed by host (%s) — exiting cleanly", exc)
+        else:
+            raise
 
 
 if __name__ == "__main__":
