@@ -130,10 +130,11 @@ wheels = [
 
 [[package]]
 name = "blessthis-llm-council"
-version = "1.0.5"
+version = "1.0.8"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "mcp", extra = ["cli"] },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -159,6 +160,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29.0" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.2.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.19.0,<2" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },

@@ -332,7 +332,13 @@ def main() -> None:
     except BaseException as exc:
         # anyio wraps the BrokenPipeError in a TaskGroup ExceptionGroup; only
         # treat it as a crash if a sub-exception is something other than a
-        # broken/reset pipe.
+        # broken/reset pipe. (Backport import for py3.10 support.)
+        try:
+            from exceptiongroup import (
+                BaseExceptionGroup,  # type: ignore[attr-defined]  # noqa: ICN003
+            )
+        except ImportError:
+            pass  # py3.11+: builtin
         causes = (exc.exceptions if isinstance(exc, BaseExceptionGroup)
                   else (exc,))
         if all(isinstance(e, (BrokenPipeError, ConnectionResetError))
