@@ -43,6 +43,13 @@ _QUOTA_RE = re.compile(
 
 _BALANCE_COOLDOWN = timedelta(minutes=60)
 _QUOTA_COOLDOWN = timedelta(minutes=10)
+# Non-capacity probe failures (timeout, connection blip, a slow reasoning seat
+# that didn't answer in PROBE_TIMEOUT) are NOT an account state — they heal on
+# their own. A short cooldown stops a flapping seat from being respawn-probed on
+# every call WITHOUT benching a healthy-but-slow seat for the rest of a session
+# (the old code reused _QUOTA_COOLDOWN's 10 min here, so one slow probe knocked
+# a whole model family out of the panel across successive councils).
+_TRANSIENT_COOLDOWN = timedelta(seconds=90)
 _OK_TTL = timedelta(minutes=10)   # a fresh 'ok' row skips the probe
 
 # Quota messages often carry their own reset time ("Resets in 154h49m16s") —
@@ -174,7 +181,7 @@ async def probe(seat: Seat, model: str) -> bool:
         await record_failure(seat.name, model, error_text, reason)
     else:
         now = datetime.now(timezone.utc)
-        until = (now + _QUOTA_COOLDOWN).isoformat()
+        until = (now + _TRANSIENT_COOLDOWN).isoformat()
         await db.execute(
             """INSERT INTO seat_health
                (seat, model, status, reason, last_error, cooldown_until, checked_at)

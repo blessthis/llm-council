@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from ..base import InvokeResult, OnSession, ProbeResult, Progress, Seat, Usage
+from ..base import PROBE_TIMEOUT, InvokeResult, OnSession, ProbeResult, Progress, Seat, Usage
 
 RUNNER_CLASS = "GenericRunner"
 
@@ -110,7 +110,7 @@ class GenericRunner:
 
     async def probe(self, seat: Seat, model: str) -> ProbeResult:
         try:
-            res = await self.invoke(seat, model, "ping", os.getcwd(), timeout=60)
+            res = await self.invoke(seat, model, "ping", os.getcwd(), timeout=PROBE_TIMEOUT)
         except Exception as e:  # noqa: BLE001 — probe never raises
             return ProbeResult(ok=False, model=model, error=repr(e)[:400])
         if res.is_error:

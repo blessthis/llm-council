@@ -23,6 +23,7 @@ import uuid
 
 from ..base import (
     _MIN_FILE_ANSWER,
+    PROBE_TIMEOUT,
     InvokeResult,
     OnSession,
     ProbeResult,
@@ -381,7 +382,7 @@ class ClaudeRunner:
                 "Reply with just: ok",
                 os.getcwd(),
                 max_turns=1,
-                timeout=60,
+                timeout=PROBE_TIMEOUT,
             )
         except Exception as e:  # noqa: BLE001 — probe never raises
             return self._probe_error(model, repr(e))

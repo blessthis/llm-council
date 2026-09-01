@@ -30,6 +30,7 @@ import os
 from typing import Any
 
 from ..base import (
+    PROBE_TIMEOUT,
     InvokeResult,
     OnSession,
     ProbeResult,
@@ -39,7 +40,7 @@ from ..base import (
 )
 
 _STDERR_TAIL = 500
-_PROBE_TIMEOUT = 60
+_PROBE_TIMEOUT = PROBE_TIMEOUT
 
 RUNNER_CLASS = "PiRunner"  # registry hook (seats/runners/__init__.py)
 

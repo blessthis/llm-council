@@ -135,6 +135,14 @@ class Progress:
 # preferred over the final chat result.
 _MIN_FILE_ANSWER = 1200
 
+# Availability-probe subprocess ceiling (all runners). A trivial "reply ok" probe
+# loads the CLI's own ~40k-token system prompt + tools BEFORE the model answers,
+# and a reasoning model (opus/fable/*-thinking) spends its first budget on
+# reasoning tokens — so 60s produced false-negative timeouts that benched the
+# whole seat. 180s covers reasoning + a degraded-but-working network path while
+# still bounding a genuine hang (the real invoke ceiling is far higher, 1500s).
+PROBE_TIMEOUT = 180
+
 
 def seat_working_instruction(path: str, ast_grep_path: str = "") -> str:
     """Appended to a seat's prompt: HOW to work efficiently on a big codebase and WHERE

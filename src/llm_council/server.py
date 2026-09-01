@@ -18,12 +18,17 @@ import datetime as _dt
 import logging
 import logging.handlers
 import os
+import sys
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from . import availability, chat, council, db, telemetry
 from .config import Config, state_dir
+
+if sys.version_info < (3, 11):
+    # Module-level so it never shadows the py3.11+ builtin inside main().
+    from exceptiongroup import BaseExceptionGroup  # type: ignore[attr-defined]  # noqa: ICN003
 
 mcp = FastMCP("llm-council")
 
@@ -332,13 +337,7 @@ def main() -> None:
     except BaseException as exc:
         # anyio wraps the BrokenPipeError in a TaskGroup ExceptionGroup; only
         # treat it as a crash if a sub-exception is something other than a
-        # broken/reset pipe. (Backport import for py3.10 support.)
-        try:
-            from exceptiongroup import (
-                BaseExceptionGroup,  # type: ignore[attr-defined]  # noqa: ICN003
-            )
-        except ImportError:
-            pass  # py3.11+: builtin
+        # broken/reset pipe.
         causes = (exc.exceptions if isinstance(exc, BaseExceptionGroup)
                   else (exc,))
         if all(isinstance(e, (BrokenPipeError, ConnectionResetError))

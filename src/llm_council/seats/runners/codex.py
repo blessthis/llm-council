@@ -32,6 +32,7 @@ import tempfile
 
 from ..base import (
     _MIN_FILE_ANSWER,
+    PROBE_TIMEOUT,
     InvokeResult,
     OnSession,
     ProbeResult,
@@ -47,7 +48,7 @@ RUNNER_CLASS = "CodexRunner"  # registry hook (seats/runners/__init__.py)
 
 _STDERR_TAIL = 500
 _STDOUT_TAIL = 500
-_PROBE_TIMEOUT = 60
+_PROBE_TIMEOUT = PROBE_TIMEOUT
 
 
 def _parse_usage(u: object) -> Usage:
