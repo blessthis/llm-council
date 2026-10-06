@@ -188,3 +188,22 @@ def test_list_seats_surfaces_warnings(env, tmp_path):
         assert any("broken" in w and "{model}" in w for w in out2["warnings"])
 
     asyncio.run(flow())
+
+
+def test_chat_start_resume_session(env):
+    """chat_start(resume_session=...) attaches to an existing harness session."""
+
+    async def flow():
+        started = await chat.chat_start("fakepi", resume_session="extern-sess-42")
+        assert "error" not in started, started
+        assert started["cli_session_id"] == "extern-sess-42"
+
+        listed = await chat.chat_list()
+        assert listed[0]["cli_session_id"] == "extern-sess-42"
+
+        # a turn runs against that session (runner resume path) and completes
+        sent = await chat.chat_send(started["chat_session_id"], "continue")
+        done = await chat.chat_poll(sent["task_id"], wait=True, timeout=30)
+        assert done["status"] == "done", done
+
+    asyncio.run(flow())

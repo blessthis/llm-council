@@ -150,10 +150,14 @@ async def _persist(
 # --------------------------------------------------------------------------- #
 
 async def chat_start(
-    seat_name: str, model: str = "", working_dir: str = "", system_prompt: str = ""
+    seat_name: str, model: str = "", working_dir: str = "", system_prompt: str = "",
+    resume_session: str = "",
 ) -> dict:
     """Open a direct chat with one seat (seats.yaml key). model defaults to the
-    seat's first healthy model (else its first declared model)."""
+    seat's first healthy model (else its first declared model). resume_session
+    (optional) attaches the chat to an EXISTING harness session/conversation id
+    (e.g. cli_session_id from chat_list/chat_poll): every turn resumes that CLI
+    session instead of starting a fresh one."""
     try:
         seats, _warnings = _load_seats()
     except SeatsFileError as e:
@@ -173,16 +177,17 @@ async def chat_start(
     session_id = await db.insert_returning_id(
         """INSERT INTO chat_sessions
            (seat, model, seat_backend, working_dir, system_prompt, status,
-            created_at, last_activity, closed)
-           VALUES (?, ?, ?, ?, ?, 'idle', ?, ?, 0)""",
+            cli_session_id, created_at, last_activity, closed)
+           VALUES (?, ?, ?, ?, ?, 'idle', ?, ?, ?, 0)""",
         (seat.name, picked, seat.runner_kind, wd,
-         system_prompt, now, now),
+         system_prompt, resume_session.strip() or None, now, now),
     )
     return {
         "chat_session_id": session_id,
         "seat": seat.name,
         "model": picked,
         "seat_backend": seat.runner_kind,
+        "cli_session_id": resume_session.strip() or None,
     }
 
 
@@ -359,6 +364,7 @@ async def chat_list(working_dir: str = "") -> list[dict]:
             "model": r["model"],
             "seat_backend": r["seat_backend"],
             "working_dir": r["working_dir"],
+            "cli_session_id": r["cli_session_id"],
             "status": r["status"],
             "closed": bool(r["closed"]),
             "created_at": r["created_at"],

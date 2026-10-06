@@ -250,12 +250,18 @@ async def council_close(council_id: int) -> dict:
 
 @mcp.tool()
 async def chat_start(
-    seat: str, model: str = "", working_dir: str = "", system_prompt: str = ""
+    seat: str, model: str = "", working_dir: str = "", system_prompt: str = "",
+    resume_session: str = "",
 ) -> dict:
     """Open a direct 1:1 chat with one seat (seats.yaml key). Returns
-    {chat_session_id, seat, model}. model defaults to the seat's first healthy model."""
+    {chat_session_id, seat, model, cli_session_id}. model defaults to the seat's
+    first healthy model. resume_session (optional) = an existing harness
+    session/conversation id (cli_session_id from chat_list/chat_poll, or an id
+    from the seat's own CLI): the chat attaches to that session and every turn
+    resumes it instead of starting a fresh one."""
     await _ensure()
-    return _json(await chat.chat_start(seat, model, working_dir, system_prompt))
+    return _json(await chat.chat_start(seat, model, working_dir, system_prompt,
+                                      resume_session))
 
 
 @mcp.tool()
@@ -284,7 +290,9 @@ async def chat_history(chat_session_id: int) -> list[dict]:
 @mcp.tool()
 async def chat_list(working_dir: str = "") -> list[dict]:
     """List chat sessions (closed included, marked), optionally filtered to a
-    single working directory."""
+    single working directory. Each row carries cli_session_id — the harness
+    session the seat runs in; pass it back as chat_start's resume_session to
+    re-attach to that conversation."""
     await _ensure()
     return [_json(r) for r in await chat.chat_list(working_dir)]
 

@@ -174,11 +174,11 @@ A **seat is an LLM family, not a runner** — the same binary can back several s
 
 | Tool | What it does |
 |---|---|
-| `chat_start` | Open a 1:1 chat session with a named seat. |
+| `chat_start` | Open a 1:1 chat session with a named seat. Optional `resume_session` attaches to an existing CLI session id. |
 | `chat_send` | Send a message (async; returns a task_id immediately). |
 | `chat_poll` | Long-poll for the turn's reply (+ usage; first turn yields the resume id). |
 | `chat_history` | Read back a chat session's messages. |
-| `chat_list` | List chat sessions (optional working_dir filter). |
+| `chat_list` | List chat sessions (optional working_dir filter); rows carry `cli_session_id` for `resume_session`. |
 | `chat_close` | Close a chat session (history preserved). |
 
 **Discovery (1)**
