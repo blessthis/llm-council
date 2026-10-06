@@ -258,7 +258,9 @@ async def chat_start(
     first healthy model. resume_session (optional) = an existing harness
     session/conversation id (cli_session_id from chat_list/chat_poll, or an id
     from the seat's own CLI): the chat attaches to that session and every turn
-    resumes it instead of starting a fresh one."""
+    resumes it instead of starting a fresh one. Full UUID = resume that exact
+    session; any other string = an ALIAS (deterministic named session, created
+    if missing)."""
     await _ensure()
     return _json(await chat.chat_start(seat, model, working_dir, system_prompt,
                                       resume_session))

@@ -96,6 +96,15 @@ async def _run_turn(task_id: str, entry: dict, seat: Seat, message: str) -> None
         "FROM chat_sessions WHERE id=?",
         (session_id,),
     )
+    cli_id = row["cli_session_id"] or None
+    # Full UUID → resume the existing CLI session (--resume / --session).
+    # Anything else (an ALIAS) → deterministic session id (--session-id):
+    # the CLI uses that exact session, creating it if missing.
+    try:
+        uuid.UUID(cli_id or "")
+        is_uuid = True
+    except ValueError:
+        is_uuid = False
     try:
         runner = get_runner(seat.runner_kind)
         result = await runner.invoke(
@@ -103,7 +112,8 @@ async def _run_turn(task_id: str, entry: dict, seat: Seat, message: str) -> None
             row["model"],
             message,
             row["working_dir"],
-            resume=row["cli_session_id"] or None,
+            resume=cli_id if is_uuid else None,
+            session_id=cli_id,
             system_prompt=row["system_prompt"] or "",
             on_session=_on_session,
         )
@@ -157,7 +167,9 @@ async def chat_start(
     seat's first healthy model (else its first declared model). resume_session
     (optional) attaches the chat to an EXISTING harness session/conversation id
     (e.g. cli_session_id from chat_list/chat_poll): every turn resumes that CLI
-    session instead of starting a fresh one."""
+    session instead of starting a fresh one. A full UUID resumes that exact
+    session; any other string is an ALIAS — a deterministic named session used
+    (and created if missing) by the seat's CLI."""
     try:
         seats, _warnings = _load_seats()
     except SeatsFileError as e:

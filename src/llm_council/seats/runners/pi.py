@@ -92,13 +92,14 @@ class PiRunner:
         return "pi"
 
     def _render_argv(
-        self, seat: Seat, model: str, prompt: str, workdir: str, resume: str | None
+        self, seat: Seat, model: str, prompt: str, workdir: str,
+        resume: str | None, session_id: str | None = None,
     ) -> list[str]:
         subs = {
             "{prompt}": prompt,
             "{model}": model,
             "{workdir}": workdir,
-            "{session_id}": resume or "",
+            "{session_id}": resume or session_id or "",
         }
         argv = [seat.agent.bin]
         for tok in seat.agent.args:
@@ -108,6 +109,9 @@ class PiRunner:
         if resume:
             # discrete tokens, appended AFTER the rendered exec-array (Q4)
             argv += ["--session", resume]
+        elif session_id:
+            # deterministic id (aliases welcome): use it, create if missing
+            argv += ["--session-id", session_id]
         return argv
 
     def _env(self, seat: Seat) -> dict[str, str]:
@@ -131,7 +135,7 @@ class PiRunner:
         timeout: int = 1500,
         extra: dict[str, str] | None = None,
     ) -> InvokeResult:
-        argv = self._render_argv(seat, model, prompt, workdir, resume)
+        argv = self._render_argv(seat, model, prompt, workdir, resume, session_id)
         env = dict(self._env(seat))
         if extra:
             env.update(extra)
